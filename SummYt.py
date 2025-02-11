@@ -1,9 +1,11 @@
-from pathlib import Path
+from time import time
 from mistralai import Mistral
 from youtube_transcript_api import YouTubeTranscriptApi
+from pytubefix import YouTube
+from pathlib import Path
+from icecream import ic
 import argparse
 import os
-from icecream import ic
 
 
 LANG_OPTIONS = ('en', 'fr', 'de', 'es', 'it', 'nl', 'pt', 'ru', 'ja', 'ko', 'zh-CN', 'zh-TW', 'ar', 'el')
@@ -26,24 +28,9 @@ LANG_MAPPING = {
 }
 
 
-# # extract video ID with regex
-# def extract_video_id(youtube_url):
-#     import re
-
-#     video_id_regex = r'(?:v=|/)([0-9A-Za-z_-]{11}).*'
-#     match = re.search(video_id_regex, youtube_url)
-
-#     if match:
-#         return match.group(1)
-#     else:
-#         return None
-
-
-# @retry(stop=stop_after_delay(10))
 def get_video_info(youtube_url):
 
     try:
-        from pytubefix import YouTube
         yt = YouTube(youtube_url)
 
         # Get available captions among the supported languages
@@ -76,7 +63,7 @@ def main(youtube_url: str, lang: str, output_directory: str = "."):
         # lang is the first of LANG_OPTIONS that is available
         old_lang = lang
         lang = next((x for x in LANG_OPTIONS if x in video_info["captions"]), None)
-        print(f"WARNING: Language \'{LANG_MAPPING[old_lang]}\' is not available for this video and will be performed in \'{LANG_MAPPING[lang]}\'. Please choose among: {video_info['captions']}")
+        print(f"WARNING: Language \'{LANG_MAPPING[old_lang]}\' is not available for this video. Summary will be performed in \'{LANG_MAPPING[lang]}\'. Else, you can choose among: {video_info['captions']}")
 
     # get transcript
     transcript = YouTubeTranscriptApi.get_transcript(video_info["id"], languages=(lang,))
@@ -119,13 +106,19 @@ def main(youtube_url: str, lang: str, output_directory: str = "."):
         ]
     )
 
-    # Save the summary to a markdown file
-    summary = chat_response.choices[0].message.content
 
-    header = f"# \"{video_info['title']}\"\n\n"
+    # Create a header and a footer for the summary
+    header = f"# {video_info['title']}\n"
     header += f"![Thumbnail]({thumbnail_url})\n\n"
-    summary = header + summary
+    header += f"*Watch the video [here]({youtube_url})*\n\n"
 
+    footer = "\n\n*Generated using [Mistral Ai](https://mistralai.com/).*\n"
+    footer += f"*My [github](https://github.com/smaugdela).*"
+
+    summary = chat_response.choices[0].message.content
+    summary = header + summary + footer
+
+    # Save the summary to a markdown file
     filename = Path(output_directory) / (video_info["title"].replace(" ", "_").lower() + ".md")
     with open(filename, "w") as f:
         f.write(summary)
@@ -150,4 +143,7 @@ if __name__ == "__main__":
     lang = args.lang
     output_directory = args.output_directory
 
+    start = time()
     main(youtube_url, lang, output_directory)
+    end = time()
+    print(f"Generated summary in {end - start:.2f} seconds!")
